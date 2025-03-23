@@ -25,7 +25,7 @@
  * @DESCRIPTION
 */
 #include <fs/vfs.h>
-#include <userspace/elf.h>
+#include <userspace/loaders/elf.h>
 #include <global.h>
 #include <arch/pager.h>
 #include <lib/util.h>
