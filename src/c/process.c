@@ -39,7 +39,7 @@
 #include <arch/pager.h>
 #include <lib/convention/sysv.h>
 
-#define DEFAULT_MEMSIZE 0x1000 * 64
+#define DEFAULT_MEMSIZE 0x1000 * 4096
 #define DEFAULT_STACKSIZE 0x2000
 
 struct ARC_Process *process_create_from_file(int userspace, char *filepath) {

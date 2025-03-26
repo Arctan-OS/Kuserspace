@@ -24,6 +24,13 @@
  *
  * @DESCRIPTION
 */
+#include <fs/vfs.h>
+#include <config.h>
+#include "arch/pager.h"
+#include "arctan.h"
+#include "lib/resource.h"
+#include "mm/vmm.h"
+#include "userspace/process.h"
 #include <global.h>
 #include <arch/smp.h>
 #include <mp/scheduler.h>
@@ -70,7 +77,8 @@ static int syscall_exit(int code) {
 	ARC_DEBUG(INFO, "Exiting %d\n", code);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	sched_dequeue(desc->current_process);
-	
+	// process_delete(desc->current_process->process);
+
 	return 0;
 }
 
@@ -80,49 +88,57 @@ static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
 	(void)whence;
 	(void)new_offset;
 
-	printf("Seek\n");
-	// SEEK
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	*new_offset = vfs_seek(file, offset, whence);
+
 	return 0;
 }
 
-static int syscall_write(int fd, void const *a, unsigned long b, long *c) {
-	(void)fd;
-	(void)a;
-	(void)b;
-	(void)c;
-
-	printf("Writing\n");
-	// WRITE
+static int syscall_write(int fd, void const *buffer, unsigned long count, long *written) {
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	*written = vfs_write((void *)buffer, 1, count, file);
+	
 	return 0;
 }
 
-static int syscall_read(int fd, void *buf, unsigned long count, long *bytes_read) {
-	(void)fd;
-	(void)buf;
-	(void)count;
-	(void)bytes_read;
-
-	printf("Reading\n");
-	// READ
+static int syscall_read(int fd, void *buffer, unsigned long count, long *read) {
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	*read = vfs_read((void *)buffer, 1, count, file);
+	
 	return 0;
 }
 
 static int syscall_close(int fd) {
-	(void)fd;
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	if (vfs_close(file) == 0) {
+		desc->current_process->process->file_table[fd] = NULL;
+	} else {
+		return -1;
+	}
 
-	printf("Closing\n");
-	// CLOSE
 	return 0;
 }
 
 static int syscall_open(char const *name, int flags, unsigned int mode, int *fd) {
-	(void)name;
-	(void)flags;
-	(void)mode;
-	(void)fd;
+	struct ARC_File *file = NULL;
+	if (vfs_open((char *)name, flags, mode, &file) != 0) {
+		*fd = -1;
+		return -1;
+	}
 
-	printf("Opening\n");
-	// OPEN
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	for (int i = 0; i < ARC_PROCESS_FILE_LIMIT; i++) {
+		if (desc->current_process->process->file_table[i] == NULL) {
+			desc->current_process->process->file_table[i] = file;
+			*fd = i;
+			break;
+		}
+	}
+
 	return 0;
 }
 static int syscall_vm_map(void *hint, unsigned long size, int prot, int flags, int fd, long offset, void **window) {
@@ -148,22 +164,33 @@ static int syscall_vm_unmap(void *a, unsigned long b) {
 	return 0;
 }
 
-static int syscall_anon_alloc(unsigned long size, void **ptr) {
-	(void)size;
-	(void)ptr;
+static int syscall_anon_alloc(unsigned long size, void **ptr) {	
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
+	
+	void *vaddr = vmm_alloc(vmeta, size);
+	void *paddr = pmm_alloc(size);
+	
+	printf("Allocating %p %p %lu\n", vaddr, paddr, size);
+	*ptr = vaddr;
 
-	void *allocation = pmm_alloc_page();
+	if (pager_map(NULL, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
+		*ptr = NULL;
+		return -1;
+	}
 
-	printf("Allocating\n");
-	// ANON_ALLOC
 	return 0;
 }
 
 static int syscall_anon_free(void *ptr, unsigned long size) {
-	(void)ptr;
 	(void)size;
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
 
-	printf("Freeing\n");
+	size_t vsize = vmm_free(vmeta, ptr);
+	void *paddr = (void *)ARC_PHYS_TO_HHDM(pager_unmap(NULL, (uintptr_t)ptr, vsize));
+	pmm_free(paddr);
+	
 	// ANON_FREE
 	return 0;
 }
