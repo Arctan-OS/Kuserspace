@@ -104,6 +104,8 @@ int thread_set_profile(struct ARC_Thread *thread, uint32_t profile) {
 	}
 
 	thread->profile = profile;
+
+	return 0;
 }
 
 uint32_t thread_get_profile(struct ARC_Thread *thread) {
