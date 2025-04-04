@@ -28,14 +28,10 @@
 #define ARC_ARCH_THREAD_H
 
 #include <mm/vmm.h>
-
-#ifdef ARC_TARGET_ARCH_X86_64
-#include <arch/x86-64/context.h>
-#endif
-
 #include <stdint.h>
 #include <stddef.h>
 #include <lib/atomics.h>
+#include <arch/context.h>
 
 enum {
 	ARC_THREAD_RUNNING = 0,
@@ -62,7 +58,7 @@ struct ARC_Thread {
 	ARC_GenericSpinlock lock;
 	uint32_t profile;
 	uint32_t state;
-	struct ARC_Registers ctx;
+	struct ARC_Context context;
 };
 
 struct ARC_Thread *thread_create(struct ARC_VMMMeta *allocator, void *page_tables, void *entry, size_t stack_size);

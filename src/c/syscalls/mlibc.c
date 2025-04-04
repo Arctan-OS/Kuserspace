@@ -83,6 +83,7 @@ static int syscall_exit(int code) {
 }
 
 static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
+	printf("seek %d\n", fd);
 	(void)fd;
 	(void)offset;
 	(void)whence;
@@ -96,6 +97,7 @@ static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
 }
 
 static int syscall_write(int fd, void const *buffer, unsigned long count, long *written) {
+	printf("write %d\n", fd);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
 	*written = vfs_write((void *)buffer, 1, count, file);
@@ -104,6 +106,7 @@ static int syscall_write(int fd, void const *buffer, unsigned long count, long *
 }
 
 static int syscall_read(int fd, void *buffer, unsigned long count, long *read) {
+	printf("read %d\n", fd);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
 	*read = vfs_read((void *)buffer, 1, count, file);
@@ -112,6 +115,7 @@ static int syscall_read(int fd, void *buffer, unsigned long count, long *read) {
 }
 
 static int syscall_close(int fd) {
+	printf("close %d\n", fd);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
 	if (vfs_close(file) == 0) {
@@ -125,6 +129,7 @@ static int syscall_close(int fd) {
 
 static int syscall_open(char const *name, int flags, unsigned int mode, int *fd) {
 	struct ARC_File *file = NULL;
+	printf("open %s\n", name);
 	if (vfs_open((char *)name, flags, mode, &file) != 0) {
 		*fd = -1;
 		return -1;
@@ -164,20 +169,21 @@ static int syscall_vm_unmap(void *a, unsigned long b) {
 	return 0;
 }
 
-static int syscall_anon_alloc(unsigned long size, void **ptr) {	
+static int syscall_anon_alloc(unsigned long size, void **ptr) {
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
-	
+
 	void *vaddr = vmm_alloc(vmeta, size);
 	void *paddr = pmm_alloc(size);
 	
-	printf("Allocating %p %p %lu\n", vaddr, paddr, size);
 	*ptr = vaddr;
 
 	if (pager_map(NULL, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
 		*ptr = NULL;
 		return -1;
 	}
+
+	printf("anon_alloc %lu\n", size);
 
 	return 0;
 }
@@ -191,6 +197,8 @@ static int syscall_anon_free(void *ptr, unsigned long size) {
 	void *paddr = (void *)ARC_PHYS_TO_HHDM(pager_unmap(NULL, (uintptr_t)ptr, vsize));
 	pmm_free(paddr);
 	
+	printf("anon_free\n");
+
 	// ANON_FREE
 	return 0;
 }

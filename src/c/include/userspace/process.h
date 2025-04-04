@@ -27,6 +27,7 @@
 #ifndef ARC_ARCH_PROCESS_H
 #define ARC_ARCH_PROCESS_H
 
+#include "lib/atomics.h"
 #include <mm/vmm.h>
 #include <config.h>
 #include <stdint.h>

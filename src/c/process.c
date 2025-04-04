@@ -34,7 +34,6 @@
 #include <userspace/loaders/elf.h>
 #include <lib/perms.h>
 #include <arch/smp.h>
-#include <arch/x86-64/ctrl_regs.h>
 #include <mm/pmm.h>
 #include <arch/pager.h>
 #include <lib/convention/sysv.h>
@@ -86,9 +85,11 @@ struct ARC_Process *process_create_from_file(int userspace, char *filepath) {
 	process_associate_thread(process, main);
 
 	char *argv[] = {"hello", "world"};
-	
-	// TODO: Make architecture independent
-	main->ctx.rsp -= sysv_prepare_entry_stack((uint64_t *)main->pstack, meta, NULL, 0, argv, 2);
+	uintptr_t offset = sysv_prepare_entry_stack((uint64_t *)main->pstack, meta, NULL, 0, argv, 2);
+
+#ifdef ARC_TARGET_ARCH_X86_64
+	main->context.regs.rsp -= offset;
+#endif
 
 	free(meta);
 
@@ -209,12 +210,17 @@ struct ARC_Thread *process_get_thread(struct ARC_Process *process) {
 		ARC_DEBUG(ERR, "Cannot get next thread of NULL process\n");
 		return NULL;
 	}
-	
+
 	struct ARC_Thread *ret = process->threads;
 	uint32_t expected = ARC_THREAD_READY;
-
+	register uint32_t running = ARC_THREAD_RUNNING;
+	
 	while (ret != NULL) {
-		if (ARC_ATOMIC_CMPXCHG(&ret->state, &expected, ARC_THREAD_RUNNING)) {
+		register uint32_t *ret_state = &ret->state;
+		register uint32_t *exp = &expected;
+
+		ARC_ATOMIC_SFENCE;
+		if (ARC_ATOMIC_CMPXCHG(ret_state, exp, running)) {
 			break;
 		}
 		

@@ -24,6 +24,8 @@
  *
  * @DESCRIPTION
 */
+#include "arch/floats.h"
+#include "arch/x86-64/ctrl_regs.h"
 #include <arctan.h>
 #include <mm/vmm.h>
 #include <lib/convention/sysv.h>
@@ -49,6 +51,7 @@ struct ARC_Thread *thread_create(struct ARC_VMMMeta *allocator, void *page_table
 	}
 
 	memset(thread, 0, sizeof(*thread));
+	init_static_spinlock(&thread->lock);
 
 	void *vstack = (void *)vmm_alloc(allocator, stack_size);
 	void *pstack = pmm_alloc(stack_size);
@@ -59,20 +62,25 @@ struct ARC_Thread *thread_create(struct ARC_VMMMeta *allocator, void *page_table
 			ARC_DEBUG(ERR, "Failed to allocate memory for thread\n");
 			return NULL;
 	}
-	
 
-	init_static_spinlock(&thread->lock);
-		
+	if (init_floats(&thread->context, 0) != 0) {
+		free(thread);
+		ARC_DEBUG(ERR, "Failed to initialize floats for thread\n");
+		return NULL;
+	}
+	
 #ifdef ARC_TARGET_ARCH_X86_64
-		thread->ctx.rip = (uintptr_t)entry;
-		thread->ctx.cs = page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x8 : 0x23;
-		thread->ctx.ss = page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x10 : 0x1b;
-		thread->ctx.rbp = (uintptr_t)vstack + stack_size - 16;
-		thread->ctx.rsp = thread->ctx.rbp;
-		thread->ctx.r11 = (1 << 9) | (1 << 1) | (0b11 << 12);
-		thread->ctx.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
+		thread->context.regs.rip = (uintptr_t)entry;
+		thread->context.regs.cs = page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x8 : 0x23;
+		thread->context.regs.ss = page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x10 : 0x1b;
+		thread->context.regs.rbp = (uintptr_t)vstack + stack_size - 16;
+		thread->context.regs.rsp = thread->context.regs.rbp;
+		thread->context.regs.r11 = (1 << 9) | (1 << 1) | (0b11 << 12);
+		thread->context.regs.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
+		thread->context.cr0 = _x86_getCR0();
+		thread->context.cr4 = _x86_getCR4();
 #endif
-		
+
 	thread->state = ARC_THREAD_READY;
 	thread->pstack = pstack;
 	thread->vstack = vstack;
