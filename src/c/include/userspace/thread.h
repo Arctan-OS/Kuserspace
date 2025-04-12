@@ -49,6 +49,7 @@ struct ARC_Thread {
 	struct ARC_Thread *next;
 	void *pstack;
 	void *vstack;
+	void *tcb;
 	size_t stack_size;
 	struct {
 		uint64_t io_requests;

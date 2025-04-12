@@ -63,7 +63,7 @@ struct ARC_Process *process_create_from_file(int userspace, char *filepath) {
 
 	struct ARC_ELFMeta *meta = load_elf(process->page_tables, file);
 
-	void *base = (void *)0x1000; // TODO: Determine this from ELF meta
+	void *base = (void *)0x10000000000; // TODO: Determine this from ELF meta
 
 	process->allocator = init_vmm(base, DEFAULT_MEMSIZE);
 

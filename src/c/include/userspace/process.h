@@ -27,7 +27,6 @@
 #ifndef ARC_ARCH_PROCESS_H
 #define ARC_ARCH_PROCESS_H
 
-#include "lib/atomics.h"
 #include <mm/vmm.h>
 #include <config.h>
 #include <stdint.h>
@@ -37,6 +36,7 @@
 struct ARC_Process {
 	struct ARC_VMMMeta *allocator;
 	struct ARC_Thread *threads;
+	// NOTE: The page_tables pointer here points to an HHDM address
 	void *page_tables;
 	void *base;
 	struct ARC_File *file_table[ARC_PROCESS_FILE_LIMIT];

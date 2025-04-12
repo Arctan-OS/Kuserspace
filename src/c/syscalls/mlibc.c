@@ -36,10 +36,15 @@
 #include <mp/scheduler.h>
 #include <mm/pmm.h>
 
+#include <arch/x86-64/ctrl_regs.h>
+
 static int syscall_tcb_set(void *arg) {
 	(void)arg;
 
-	printf("TCB Set\n");
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	desc->current_thread->tcb = arg;
+	_x86_WRMSR(0xC0000100, (uintptr_t)arg);
+
 	// TCB_SET
 	return 0;
 }
@@ -83,7 +88,6 @@ static int syscall_exit(int code) {
 }
 
 static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
-	printf("seek %d\n", fd);
 	(void)fd;
 	(void)offset;
 	(void)whence;
@@ -91,33 +95,56 @@ static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
 
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
+
+	if (file == NULL) {
+		return -1;
+	}
+
 	*new_offset = vfs_seek(file, offset, whence);
 
 	return 0;
 }
 
 static int syscall_write(int fd, void const *buffer, unsigned long count, long *written) {
-	printf("write %d\n", fd);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
+
+#ifdef ARC_DEBUG_ENABLE
+	if (fd == 0) {
+		printf("%.*s", count, buffer);
+	}
+#endif
+
+	if (file == NULL) {
+		return -1;
+	}
+
 	*written = vfs_write((void *)buffer, 1, count, file);
 	
 	return 0;
 }
 
 static int syscall_read(int fd, void *buffer, unsigned long count, long *read) {
-	printf("read %d\n", fd);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
+
+	if (file == NULL) {
+		return -1;
+	}
+
 	*read = vfs_read((void *)buffer, 1, count, file);
 	
 	return 0;
 }
 
 static int syscall_close(int fd) {
-	printf("close %d\n", fd);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
+
+	if (file == NULL) {
+		return -1;
+	}
+
 	if (vfs_close(file) == 0) {
 		desc->current_process->process->file_table[fd] = NULL;
 	} else {
@@ -129,7 +156,6 @@ static int syscall_close(int fd) {
 
 static int syscall_open(char const *name, int flags, unsigned int mode, int *fd) {
 	struct ARC_File *file = NULL;
-	printf("open %s\n", name);
 	if (vfs_open((char *)name, flags, mode, &file) != 0) {
 		*fd = -1;
 		return -1;
@@ -182,9 +208,7 @@ static int syscall_anon_alloc(unsigned long size, void **ptr) {
 		*ptr = NULL;
 		return -1;
 	}
-
-	printf("anon_alloc %lu\n", size);
-
+	
 	return 0;
 }
 
@@ -196,8 +220,6 @@ static int syscall_anon_free(void *ptr, unsigned long size) {
 	size_t vsize = vmm_free(vmeta, ptr);
 	void *paddr = (void *)ARC_PHYS_TO_HHDM(pager_unmap(NULL, (uintptr_t)ptr, vsize));
 	pmm_free(paddr);
-	
-	printf("anon_free\n");
 
 	// ANON_FREE
 	return 0;
