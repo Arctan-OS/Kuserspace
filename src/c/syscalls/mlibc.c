@@ -26,11 +26,12 @@
 */
 #include <fs/vfs.h>
 #include <config.h>
-#include "arch/pager.h"
-#include "arctan.h"
-#include "lib/resource.h"
-#include "mm/vmm.h"
-#include "userspace/process.h"
+#include <arch/pager.h>
+#include <arch/x86-64/util.h>
+#include <arctan.h>
+#include <lib/resource.h>
+#include <mm/vmm.h>
+#include <userspace/process.h>
 #include <global.h>
 #include <arch/smp.h>
 #include <mp/scheduler.h>
@@ -172,57 +173,83 @@ static int syscall_open(char const *name, int flags, unsigned int mode, int *fd)
 
 	return 0;
 }
-static int syscall_vm_map(void *hint, unsigned long size, int prot, int flags, int fd, long offset, void **window) {
-	(void)hint;
-	(void)size;
-	(void)prot;
-	(void)flags;
-	(void)fd;
-	(void)offset;
-	(void)window;
 
-	printf("Mapping\n");
-	// VM_MAP
-	return 0;
-}
+static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, int fd, long offset, void **ptr) {
+	int prot = prot_flags >> 32;
+	int flags = prot_flags & UINT32_MAX;
 
-static int syscall_vm_unmap(void *a, unsigned long b) {
-	(void)a;
-	(void)b;
-
-	printf("Unmapping\n");
-	// VM_UNMAP
-	return 0;
-}
-
-static int syscall_anon_alloc(unsigned long size, void **ptr) {
-	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
-
-	void *vaddr = vmm_alloc(vmeta, size);
-	void *paddr = pmm_alloc(size);
-	
-	*ptr = vaddr;
-
-	if (pager_map(NULL, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
-		*ptr = NULL;
+	if (size == 0 || ptr == NULL) {
 		return -1;
 	}
-	
-	return 0;
-}
 
-static int syscall_anon_free(void *ptr, unsigned long size) {
-	(void)size;
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
 
-	size_t vsize = vmm_free(vmeta, ptr);
-	void *paddr = (void *)ARC_PHYS_TO_HHDM(pager_unmap(NULL, (uintptr_t)ptr, vsize));
-	pmm_free(paddr);
+	*ptr = NULL;
 
-	// ANON_FREE
+	void *paddr = pmm_alloc(size);
+
+	if (paddr == NULL) {
+		return -2;
+	}
+
+	retry:;
+
+	void *vaddr = (hint == NULL ? vmm_alloc(vmeta, size) : hint);
+	
+	if (vaddr == NULL) {
+		return -3;
+	}
+
+	// TODO: Properly set the flags
+	if (pager_map(NULL, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
+		if (hint != NULL) {
+			hint = NULL;
+			goto retry;
+		} else {
+			return -4;
+		}
+	}
+
+	if (fd >= 0 && fd <= ARC_PROCESS_FILE_LIMIT - 1) {
+		struct ARC_File *file = desc->current_process->process->file_table[fd];
+
+		if (file != NULL) {
+			vfs_seek(file, offset, SEEK_SET);
+			vfs_read(vaddr, 1, size, file);
+			// TODO: Should the previous offset be restored?
+		}
+	}
+
+	*ptr = vaddr;
+
 	return 0;
+}
+
+static int syscall_vm_unmap(void *address, unsigned long size) {
+	if (size == 0) {
+		return -1;
+	}
+
+	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
+
+	size_t len = vmm_len(vmeta, address);
+
+	if (size == len) {
+		vmm_free(vmeta, address);
+		void *paddr = NULL;
+		if (pager_unmap(NULL, (uintptr_t)address, size, &paddr) != 0) {
+			ARC_DEBUG(ERR, "I do not know how to recover from this\n");
+			ARC_HANG;
+		}
+
+		pmm_free(paddr);
+	} else {
+		if (pager_unmap(NULL, (uintptr_t)address, size, NULL) != 0) {
+			return -2;
+		}
+	}
 }
 
 static int syscall_libc_log(const char *str) {
@@ -246,7 +273,5 @@ int (*Arc_SyscallTable[])() = {
 	[9] = syscall_open,
 	[10] = syscall_vm_map,
 	[11] = syscall_vm_unmap,
-	[12] = syscall_anon_alloc,
-	[13] = syscall_anon_free,
-	[14] = syscall_libc_log,
+	[12] = syscall_libc_log,
 };
