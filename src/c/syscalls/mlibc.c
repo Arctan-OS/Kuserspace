@@ -37,16 +37,9 @@
 #include <mp/scheduler.h>
 #include <mm/pmm.h>
 
-#include <arch/x86-64/ctrl_regs.h>
-
 static int syscall_tcb_set(void *arg) {
-	(void)arg;
+	smp_set_tcb(arg);
 
-	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	desc->current_thread->tcb = arg;
-	_x86_WRMSR(0xC0000100, (uintptr_t)arg);
-
-	// TCB_SET
 	return 0;
 }
 
@@ -56,14 +49,15 @@ static int syscall_futex_wait(int *ptr, int expected, struct timespec const *tim
 	(void)time;
 
 	printf("Futex wait\n");
-	// FUTEX_WAIT
+
 	return 0;
 }
+
 static int syscall_futex_wake(int *ptr) {
 	(void)ptr;
 
 	printf("Futex wake\n");
-	// FUTEX_WAKE
+	
 	return 0;
 }
 
@@ -73,13 +67,11 @@ static int syscall_clock_get(int a, long *b, long *c) {
 	(void)c;
 
 	printf("Syscall clock get\n");
-	// CLOCK_GET
+	
 	return 0;
 }
 
 static int syscall_exit(int code) {
-	(void)code;
-
 	ARC_DEBUG(INFO, "Exiting %d\n", code);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	sched_dequeue(desc->current_process);
@@ -89,11 +81,6 @@ static int syscall_exit(int code) {
 }
 
 static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
-	(void)fd;
-	(void)offset;
-	(void)whence;
-	(void)new_offset;
-
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_File *file = desc->current_process->process->file_table[fd];
 
@@ -184,9 +171,9 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
-
+	
 	*ptr = NULL;
-
+	
 	void *paddr = pmm_alloc(size);
 
 	if (paddr == NULL) {
@@ -196,7 +183,7 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	retry:;
 
 	void *vaddr = (hint == NULL ? vmm_alloc(vmeta, size) : hint);
-	
+
 	if (vaddr == NULL) {
 		return -3;
 	}
@@ -252,11 +239,9 @@ static int syscall_vm_unmap(void *address, unsigned long size) {
 	}
 }
 
-static int syscall_libc_log(const char *str) {
-	(void)str;
-	
-	// LIBC LOG
+static int syscall_libc_log(const char *str) {	
 	printf("%s\n", str);
+
 	return 0;
 }
 
