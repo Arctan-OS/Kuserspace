@@ -237,6 +237,8 @@ static int syscall_vm_unmap(void *address, unsigned long size) {
 			return -2;
 		}
 	}
+
+	return 0;
 }
 
 static int syscall_libc_log(const char *str) {	
