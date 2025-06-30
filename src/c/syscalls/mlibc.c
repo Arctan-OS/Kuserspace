@@ -24,7 +24,7 @@
  *
  * @DESCRIPTION
 */
-#include "interface/terminal.h"
+#include <interface/terminal.h>
 #include <fs/vfs.h>
 #include <config.h>
 #include <arch/pager.h>
@@ -76,7 +76,7 @@ static int syscall_exit(int code) {
 	ARC_DEBUG(INFO, "Exiting %d\n", code);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	sched_dequeue(desc->current_process);
-	term_draw(Arc_CurrentTerm);
+	term_draw();
 	// process_delete(desc->current_process->process);
 
 	return 0;
