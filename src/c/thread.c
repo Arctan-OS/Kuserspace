@@ -28,7 +28,7 @@
 #include "arch/x86-64/ctrl_regs.h"
 #include <arctan.h>
 #include <mm/vmm.h>
-#include <lib/convention/sysv.h>
+#include <userspace/convention/sysv.h>
 #include <arch/x86-64/apic/lapic.h>
 #include <mm/pmm.h>
 #include <userspace/thread.h>

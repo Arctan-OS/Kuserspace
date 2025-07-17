@@ -36,7 +36,7 @@
 #include <arch/smp.h>
 #include <mm/pmm.h>
 #include <arch/pager.h>
-#include <lib/convention/sysv.h>
+#include <userspace/convention/sysv.h>
 
 #define DEFAULT_MEMSIZE 0x1000 * 4096
 #define DEFAULT_STACKSIZE 0x2000

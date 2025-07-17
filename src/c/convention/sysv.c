@@ -25,7 +25,7 @@
  * @DESCRIPTION
 */
 #include <global.h>
-#include <lib/convention/sysv.h>
+#include <userspace/convention/sysv.h>
 #include <lib/util.h>
 #include <stdint.h>
 
