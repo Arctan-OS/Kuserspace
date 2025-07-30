@@ -167,6 +167,9 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	int prot = prot_flags >> 32;
 	int flags = prot_flags & UINT32_MAX;
 
+	(void)prot;
+	(void)flags;
+
 	if (size == 0 || ptr == NULL) {
 		return -1;
 	}
@@ -223,22 +226,14 @@ static int syscall_vm_unmap(void *address, unsigned long size) {
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
 
-	size_t len = vmm_len(vmeta, address);
-
-	if (size == len) {
-		vmm_free(vmeta, address);
-		void *paddr = NULL;
-		if (pager_unmap(NULL, (uintptr_t)address, size, &paddr) != 0) {
-			ARC_DEBUG(ERR, "I do not know how to recover from this\n");
-			ARC_HANG;
-		}
-
-		pmm_free(paddr);
-	} else {
-		if (pager_unmap(NULL, (uintptr_t)address, size, NULL) != 0) {
-			return -2;
-		}
+	vmm_free(vmeta, address);
+	void *paddr = NULL;
+	if (pager_unmap(NULL, (uintptr_t)address, size, &paddr) != 0) {
+		ARC_DEBUG(ERR, "I do not know how to recover from this\n");
+		ARC_HANG;
 	}
+
+	pmm_free(paddr);
 
 	return 0;
 }
