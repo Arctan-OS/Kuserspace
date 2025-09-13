@@ -24,13 +24,15 @@
  *
  * @DESCRIPTION
 */
+#include "abi-bits/seek-whence.h"
+#include "arch/context.h"
 #include <interface/terminal.h>
 #include <fs/vfs.h>
 #include <config.h>
 #include <arch/pager.h>
 #include <arch/x86-64/util.h>
 #include <arctan.h>
-#include <lib/resource.h>
+#include <drivers/resource.h>
 #include <mm/vmm.h>
 #include <userspace/process.h>
 #include <global.h>
@@ -39,7 +41,7 @@
 #include <mm/pmm.h>
 
 static int syscall_tcb_set(void *arg) {
-	smp_set_tcb(arg);
+	(void)arg;
 
 	return 0;
 }
@@ -75,16 +77,15 @@ static int syscall_clock_get(int a, long *b, long *c) {
 static int syscall_exit(int code) {
 	ARC_DEBUG(INFO, "Exiting %d\n", code);
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	sched_dequeue(desc->current_process);
 	term_draw();
-	// process_delete(desc->current_process->process);
+	process_delete(desc->thread->parent);
 
 	return 0;
 }
 
 static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	struct ARC_File *file = desc->thread->parent->file_table[fd];
 
 	if (file == NULL) {
 		return -1;
@@ -97,7 +98,7 @@ static int syscall_seek(int fd, long offset, int whence, long *new_offset) {
 
 static int syscall_write(int fd, void const *buffer, unsigned long count, long *written) {
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	struct ARC_File *file = desc->thread->parent->file_table[fd];
 
 #ifdef ARC_DEBUG_ENABLE
 	if (fd == 0) {
@@ -116,7 +117,7 @@ static int syscall_write(int fd, void const *buffer, unsigned long count, long *
 
 static int syscall_read(int fd, void *buffer, unsigned long count, long *read) {
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	struct ARC_File *file = desc->thread->parent->file_table[fd];
 
 	if (file == NULL) {
 		return -1;
@@ -129,14 +130,14 @@ static int syscall_read(int fd, void *buffer, unsigned long count, long *read) {
 
 static int syscall_close(int fd) {
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_File *file = desc->current_process->process->file_table[fd];
+	struct ARC_File *file = desc->thread->parent->file_table[fd];
 
 	if (file == NULL) {
 		return -1;
 	}
 
 	if (vfs_close(file) == 0) {
-		desc->current_process->process->file_table[fd] = NULL;
+		desc->thread->parent->file_table[fd] = NULL;
 	} else {
 		return -1;
 	}
@@ -153,8 +154,8 @@ static int syscall_open(char const *name, int flags, unsigned int mode, int *fd)
 
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
 	for (int i = 0; i < ARC_PROCESS_FILE_LIMIT; i++) {
-		if (desc->current_process->process->file_table[i] == NULL) {
-			desc->current_process->process->file_table[i] = file;
+		if (desc->thread->parent->file_table[i] == NULL) {
+			desc->thread->parent->file_table[i] = file;
 			*fd = i;
 			break;
 		}
@@ -175,7 +176,7 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	}
 
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
+	struct ARC_VMMMeta *vmeta = desc->thread->parent->allocator;
 	
 	*ptr = NULL;
 	
@@ -204,7 +205,7 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	}
 
 	if (fd >= 0 && fd <= ARC_PROCESS_FILE_LIMIT - 1) {
-		struct ARC_File *file = desc->current_process->process->file_table[fd];
+		struct ARC_File *file = desc->thread->parent->file_table[fd];
 
 		if (file != NULL) {
 			vfs_seek(file, offset, SEEK_SET);
@@ -224,7 +225,7 @@ static int syscall_vm_unmap(void *address, unsigned long size) {
 	}
 
 	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_VMMMeta *vmeta = desc->current_process->process->allocator;
+	struct ARC_VMMMeta *vmeta = desc->thread->parent->allocator;
 
 	vmm_free(vmeta, address);
 	void *paddr = NULL;
