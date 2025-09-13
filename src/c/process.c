@@ -24,24 +24,61 @@
  *
  * @DESCRIPTION
 */
-#include <userspace/thread.h>
-#include <lib/atomics.h>
-#include <mm/vmm.h>
-#include <userspace/process.h>
-#include <mm/allocator.h>
-#include <global.h>
-#include <lib/util.h>
-#include <userspace/loaders/elf.h>
-#include <lib/perms.h>
-#include <arch/smp.h>
-#include <mm/pmm.h>
-#include <arch/pager.h>
-#include <userspace/convention/sysv.h>
+#include "arch/pager.h"
+#include "fs/vfs.h"
+#include "global.h"
+#include "lib/atomics.h"
+#include "lib/util.h"
+#include "mm/allocator.h"
+#include "mm/vmm.h"
+#include "userspace/convention/sysv.h"
+#include "userspace/loaders/elf.h"
+#include "userspace/thread.h"
+#include "userspace/process.h"
 
 #define DEFAULT_MEMSIZE 0x1000 * 4096
 #define DEFAULT_STACKSIZE 0x2000
 
-struct ARC_Process *process_create_from_file(int userspace, char *filepath) {
+static uint64_t pid_counter = 0;
+
+// Expected that process->base will be set by the caller
+struct ARC_Process *process_create(bool userspace, void *page_tables) {
+	struct ARC_Process *process = (struct ARC_Process *)alloc(sizeof(*process));
+
+	if (process == NULL) {
+		ARC_DEBUG(ERR, "Failed to allocate process\n");
+		return  NULL;
+	}
+
+	memset(process, 0, sizeof(*process));
+
+	if (page_tables == NULL) {
+		if (!userspace) {
+			// Not a userspace process
+			page_tables = (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables);
+		} else {
+			page_tables = pager_create_page_tables();
+
+			if (page_tables == NULL) {
+				ARC_DEBUG(ERR, "Failed to allocate page tables\n");
+				free(process);
+				return NULL;
+			}
+
+			// TODO: Possibly isolate the kernel from the userspace more completely such that user
+			//       only has the most basic functions mapped and not the whole kernel?
+			pager_clone(page_tables, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
+				    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__), 0);
+		}
+	}
+
+	process->page_tables = page_tables;
+	process->pid = ARC_ATOMIC_INC(pid_counter);
+
+	return process;
+}
+
+struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 	if (filepath == NULL) {
 		ARC_DEBUG(ERR, "Failed to create process, no file given\n");
 		return NULL;
@@ -65,31 +102,24 @@ struct ARC_Process *process_create_from_file(int userspace, char *filepath) {
 
 	void *base = (void *)0x10000000000; // TODO: Determine this from ELF meta
 
-	process->allocator = init_vmm(base, DEFAULT_MEMSIZE);
-
-	if (process->allocator == NULL) {
+	ARC_VMMMeta *vmm = init_vmm(base, DEFAULT_MEMSIZE);
+	if (vmm == NULL) {
 		// TODO: Destroy page maps, destroy currently allocated meta data
 		//       free all memory mapped by ELF loader
 		ARC_DEBUG(ERR, "Failed to create process allocator\n");
 		return NULL;
 	}
-	
-	struct ARC_Thread *main = thread_create(process->allocator, process->page_tables, meta->entry, DEFAULT_STACKSIZE);
+	process->allocator = vmm;
 
+	struct ARC_Thread *main = thread_create(process, meta->entry, DEFAULT_STACKSIZE);
 	if (main == NULL) {
 		process_delete(process);
 		ARC_DEBUG(ERR, "Failed to create main thread\n");
 		return NULL;
 	}
 
-	process_associate_thread(process, main);
-
 	char *argv[] = {"hello", "world"};
-	uintptr_t offset = sysv_prepare_entry_stack((uint64_t *)main->pstack, meta, NULL, 0, argv, 2);
-
-#ifdef ARC_TARGET_ARCH_X86_64
-	main->context.regs.rsp -= offset;
-#endif
+	sysv_prepare_entry_stack(main, meta, NULL, 0, argv, 2);
 
 	free(meta);
 
@@ -98,89 +128,41 @@ struct ARC_Process *process_create_from_file(int userspace, char *filepath) {
 	return process;
 }
 
-// Expected that process->base will be set by the caller
-struct ARC_Process *process_create(int userspace, void *page_tables) {
-	struct ARC_Process *process = (struct ARC_Process *)alloc(sizeof(*process));
-
-	if (process == NULL) {
-		ARC_DEBUG(ERR, "Failed to allocate process\n");
-		return  NULL;
-	}
-
-	if (page_tables == NULL) {
-		if (userspace == 0) {
-			// Not a userspace process
-			page_tables = (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables);
-			goto skip_page_tables;
-		}
-
-		page_tables = pager_create_page_tables();
-
-		if (page_tables == NULL) {
-			ARC_DEBUG(ERR, "Failed to allocate page tables\n");
-			free(process);
-			return NULL;
-		}
-
-		pager_clone(page_tables, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
-			    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__), 0);
-	}
-
-	skip_page_tables:;
-
-	memset(process, 0, sizeof(*process));
-
-	process->page_tables = page_tables;
-
-	return process;
-}
-
-// NOTE: Associate and disassociate are a little bit silly, so it may be worthwhile to streamline
-//       things by making it so that threads, upon creation, do this association, and on deletion,
-//       do the disassociation
 int process_associate_thread(struct ARC_Process *process, struct ARC_Thread *thread) {
 	if (process == NULL || thread == NULL) {
-		ARC_DEBUG(ERR, "Failed associate thread (%p) with process (%p)\n", thread, process);
+		ARC_DEBUG(ERR, "Improper arguments\n");
 		return -1;
 	}
 
-	struct ARC_Thread *temp = thread;
-	ARC_ATOMIC_XCHG(&process->threads, &temp, &thread->next);
+	ARC_ThreadElement *elem = alloc(sizeof(*elem));
+	elem->t = thread;
+	ARC_ATOMIC_XCHG(&process->threads, &elem, &elem->next);
 
 	return 0;
 }
 
 int process_disassociate_thread(struct ARC_Process *process, struct ARC_Thread *thread) {
 	if (process == NULL || thread == NULL) {
-		ARC_DEBUG(ERR, "Failed disassociate thread (%p) with process (%p)\n", thread, process);
+		ARC_DEBUG(ERR, "Improper arguments\n");
 		return -1;
 	}
 
-	struct ARC_Thread *current = process->threads;
-	struct ARC_Thread *last = NULL;
-
-	// NOTE: I do not see a way to avoid this while loop (it would be great if I could),
-	//	 but the threads to do not keep track of the previous element, so I don't know
-	while (current != NULL) {
-		if (current == thread) {
-			break;
-		}
-
-		last = current;
+	ARC_ThreadElement *current = process->threads;
+	ARC_ThreadElement *prev = NULL;
+	while (current != NULL && current->t != thread) {
+		prev = current;
 		current = current->next;
 	}
 
 	if (current == NULL) {
-		ARC_DEBUG(ERR, "Could not find thread (%p) in process (%p)\n", thread, process);
-		return -1;
+		ARC_DEBUG(ERR, "Could not find thread\n");
+		return -2;
 	}
 
-	struct ARC_Thread *temp = thread->next;
-	if (last == NULL) {
-		ARC_ATOMIC_XCHG(&process->threads, &temp, &thread->next);
-	} else {
-		ARC_ATOMIC_XCHG(&last->next, &temp, &thread->next);
-	}
+	ARC_ThreadElement *temp = NULL;
+	ARC_ATOMIC_XCHG(&prev->next, &current->next, &temp);
+
+	free(current);
 
 	return 0;
 }
@@ -203,29 +185,4 @@ int process_delete(struct ARC_Process *process) {
 	}
 
 	return 0;
-}
-
-struct ARC_Thread *process_get_thread(struct ARC_Process *process) {
-	if (process == NULL) {
-		ARC_DEBUG(ERR, "Cannot get next thread of NULL process\n");
-		return NULL;
-	}
-
-	struct ARC_Thread *ret = process->threads;
-	uint32_t expected = ARC_THREAD_READY;
-	register uint32_t running = ARC_THREAD_RUNNING;
-	
-	while (ret != NULL) {
-		register uint32_t *ret_state = &ret->state;
-		register uint32_t *exp = &expected;
-
-		ARC_ATOMIC_SFENCE;
-		if (ARC_ATOMIC_CMPXCHG(ret_state, exp, running)) {
-			break;
-		}
-		
-		ret = ret->next;
-	}
-
-	return ret;
 }

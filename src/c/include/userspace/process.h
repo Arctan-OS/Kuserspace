@@ -27,28 +27,33 @@
 #ifndef ARC_ARCH_PROCESS_H
 #define ARC_ARCH_PROCESS_H
 
-#include <mm/vmm.h>
-#include <config.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <userspace/thread.h>
+#include "config.h"
+#include "mm/vmm.h"
+#include "userspace/thread.h"
 
-struct ARC_Process {
-	struct ARC_VMMMeta *allocator;
-	struct ARC_Thread *threads;
+#include <stdbool.h>
+#include <stddef.h>
+
+typedef struct ARC_ThreadElement {
+	struct ARC_ThreadElement *next;
+	ARC_Thread *t;
+} ARC_ThreadElement;
+
+typedef struct ARC_Process {
+	ARC_VMMMeta *allocator;
+	ARC_ThreadElement *threads;
 	// NOTE: The page_tables pointer here points to an HHDM address
 	void *page_tables;
-	void *base;
 	struct ARC_File *file_table[ARC_PROCESS_FILE_LIMIT];
+	uint64_t pid;
 	int priority;
-};
+} ARC_Process;
 
-struct ARC_Process *process_create_from_file(int userspace, char *filepath);
-struct ARC_Process *process_create(int userspace, void *page_tables);
-int process_associate_thread(struct ARC_Process *process, struct ARC_Thread *thread);
-int process_disassociate_thread(struct ARC_Process *process, struct ARC_Thread *thread);
-int process_fork(struct ARC_Process *process);
-int process_delete(struct ARC_Process *process);
-struct ARC_Thread *process_get_thread(struct ARC_Process *process);
+ARC_Process *process_create(bool userspace, void *page_tables);
+ARC_Process *process_create_from_file(bool userspace, char *filepath);
+int process_associate_thread(ARC_Process *process, ARC_Thread *thread);
+int process_disassociate_thread(ARC_Process *process, ARC_Thread *thread);
+int process_fork(ARC_Process *process);
+int process_delete(ARC_Process *process);
 
 #endif
