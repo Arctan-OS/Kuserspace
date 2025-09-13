@@ -27,44 +27,27 @@
 #ifndef ARC_ARCH_THREAD_H
 #define ARC_ARCH_THREAD_H
 
-#include <mm/vmm.h>
+#include "arch/context.h"
+#include "lib/spinlock.h"
+#include "mp/profiling.h"
+
 #include <stdint.h>
 #include <stddef.h>
-#include <lib/atomics.h>
-#include <arch/context.h>
 
-enum {
-	ARC_THREAD_RUNNING = 0,
-	ARC_THREAD_READY,
-	ARC_THREAD_SUSPEND
-};
-
-enum {
-	ARC_THREAD_PROFILE_MEM = 0,
-	ARC_THREAD_PROFILE_IO,
-	ARC_THREAD_PROFILE_COUNT
-};
-
-struct ARC_Thread {
-	struct ARC_Thread *next;
+typedef struct ARC_Thread {
+	struct ARC_Process *parent;
 	void *pstack;
 	void *vstack;
-	void *tcb;
 	size_t stack_size;
-	struct {
-		uint64_t io_requests;
-		uint64_t suspensions;
-		// TODO: MORE DATA POINTS!
-	} profiling_data;
-	ARC_GenericSpinlock lock;
-	uint32_t profile;
+	uint64_t tid;
+	ARC_Profile prof;
+	ARC_Spinlock lock;
 	uint32_t state;
-	struct ARC_Context context;
-};
+	int priority; // If -1, use process's priority, otherwise, use this one
+	ARC_Context context;
+} ARC_Thread;
 
-struct ARC_Thread *thread_create(struct ARC_VMMMeta *allocator, void *page_tables, void *entry, size_t stack_size);
-int thread_delete(struct ARC_Thread *thread);
-int thread_set_profile(struct ARC_Thread *thread, uint32_t profile);
-uint32_t thread_get_profile(struct ARC_Thread *thread);
+ARC_Thread *thread_create(struct ARC_Process *process, void *entry, size_t stack_size);
+int thread_delete(ARC_Thread *thread);
 
 #endif

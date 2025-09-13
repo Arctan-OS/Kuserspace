@@ -24,21 +24,24 @@
  *
  * @DESCRIPTION
 */
+#include "arch/context.h"
 #include "arch/floats.h"
-#include "arch/x86-64/ctrl_regs.h"
-#include <arctan.h>
-#include <mm/vmm.h>
-#include <userspace/convention/sysv.h>
-#include <arch/x86-64/apic/lapic.h>
-#include <mm/pmm.h>
-#include <userspace/thread.h>
-#include <arch/pager.h>
-#include <mm/allocator.h>
-#include <global.h>
-#include <lib/util.h>
+#include "arch/pager.h"
+#include "global.h"
+#include "lib/util.h"
+#include "mm/allocator.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "mp/scheduler.h"
+#include "userspace/process.h"
+#include "userspace/thread.h"
 
-struct ARC_Thread *thread_create(struct ARC_VMMMeta *allocator, void *page_tables, void *entry, size_t stack_size) {
-	if (entry == NULL) {
+#ifdef ARC_TARGET_ARCH_X86_64
+#include "arch/x86-64/ctrl_regs.h"
+#endif
+
+ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) {
+	if (process == NULL || entry == NULL || stack_size == 0) {
 		ARC_DEBUG(ERR, "Failed to create thread, improper parameters (%p %lu)\n", entry, stack_size);
 		return NULL;
 	}
@@ -53,45 +56,66 @@ struct ARC_Thread *thread_create(struct ARC_VMMMeta *allocator, void *page_table
 	memset(thread, 0, sizeof(*thread));
 	init_static_spinlock(&thread->lock);
 
-	void *vstack = (void *)vmm_alloc(allocator, stack_size);
-	void *pstack = pmm_alloc(stack_size);
-
-	if (pstack == NULL || vstack == NULL ||
-		pager_map(page_tables, (uintptr_t)vstack, ARC_HHDM_TO_PHYS(pstack), stack_size, (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (1 << ARC_PAGER_US)) != 0) {
-			free(thread);
-			ARC_DEBUG(ERR, "Failed to allocate memory for thread\n");
-			return NULL;
-	}
-
 	if (init_floats(&thread->context, 0) != 0) {
-		free(thread);
 		ARC_DEBUG(ERR, "Failed to initialize floats for thread\n");
-		return NULL;
+		goto clean_up;
 	}
-	
+
+	if ((thread->pstack = pmm_alloc(stack_size)) == NULL) {
+		ARC_DEBUG(ERR, "Failed to allocate physical memory for thread\n");
+		goto clean_up;
+	}
+
+	if ((thread->vstack = (void *)vmm_alloc(process->allocator, stack_size)) == NULL) {
+		ARC_DEBUG(ERR, "Failed to allocate virtual memory for thread\n");
+		goto clean_up;
+	}
+
+	if (pager_map(process->page_tables, (uintptr_t)thread->vstack, ARC_HHDM_TO_PHYS(thread->pstack), stack_size,
+		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (1 << ARC_PAGER_US)) != 0) {
+		ARC_DEBUG(ERR, "Failed to map memory for thread\n");
+		goto clean_up;
+	}
+
+	thread->state = ARC_THREAD_READY;
+	thread->stack_size = stack_size;
+
 #ifdef ARC_TARGET_ARCH_X86_64
-		thread->context.regs.rip = (uintptr_t)entry;
-		thread->context.regs.cs = page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x8 : 0x23;
-		thread->context.regs.ss = page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x10 : 0x1b;
-		thread->context.regs.rbp = (uintptr_t)vstack + stack_size - 16;
-		thread->context.regs.rsp = thread->context.regs.rbp;
-		thread->context.regs.r11 = (1 << 9) | (1 << 1) | (0b11 << 12);
-		thread->context.regs.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
+		thread->context.frame.rip = (uintptr_t)entry;
+		thread->context.frame.cs = process->page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x8 : 0x23;
+		thread->context.frame.ss = process->page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x10 : 0x1b;
+		thread->context.frame.gpr.rbp = (uintptr_t)thread->vstack + stack_size - 16;
+		thread->context.frame.rsp = thread->context.frame.gpr.rbp;
+		thread->context.frame.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
 		thread->context.cr0 = _x86_getCR0();
 		thread->context.cr4 = _x86_getCR4();
 #endif
 
-	thread->state = ARC_THREAD_READY;
-	thread->pstack = pstack;
-	thread->vstack = vstack;
-	thread->stack_size = stack_size;
+	if (process_associate_thread(process, thread) != 0) {
+		ARC_DEBUG(ERR, "Failed to associate thread with process\n");
+		pager_unmap(process->page_tables, (uintptr_t)thread->vstack, stack_size, NULL);
+		goto clean_up;
+	}
 
 	ARC_DEBUG(INFO, "Created thread (%p)\n", entry);
 
 	return thread;
+
+	clean_up:;
+	if (thread->pstack != NULL) {
+		pmm_free(thread->pstack);
+	}
+
+	if (thread->vstack != NULL) {
+		vmm_free(process->allocator, thread->vstack);
+	}
+
+	free(thread);
+
+	return NULL;
 }
 
-int thread_delete(struct ARC_Thread *thread) {
+int thread_delete(ARC_Thread *thread) {
 	if (thread == NULL) {
 		ARC_DEBUG(ERR, "Failed to delete thread, given thread is NULL\n");
 		return -1;
@@ -105,26 +129,3 @@ int thread_delete(struct ARC_Thread *thread) {
 
 	return 0;
 }
-
-int thread_set_profile(struct ARC_Thread *thread, uint32_t profile) {
-	if (thread == NULL) {
-		return -1;
-	}
-
-	thread->profile = profile;
-
-	return 0;
-}
-
-uint32_t thread_get_profile(struct ARC_Thread *thread) {
-	if (thread == NULL) {
-		return ARC_THREAD_PROFILE_COUNT;
-	}
-
-	uint32_t profile = ARC_THREAD_PROFILE_MEM;
-
-	// TODO: Math to determine ratios to determine best profile for thread
-
-	return profile;
-}
-
