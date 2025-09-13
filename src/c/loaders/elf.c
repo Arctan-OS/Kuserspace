@@ -24,6 +24,7 @@
  *
  * @DESCRIPTION
 */
+#include "abi-bits/seek-whence.h"
 #include <fs/vfs.h>
 #include <userspace/loaders/elf.h>
 #include <global.h>
