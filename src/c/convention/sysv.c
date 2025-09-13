@@ -24,6 +24,7 @@
  *
  * @DESCRIPTION
 */
+#include "userspace/thread.h"
 #include <global.h>
 #include <userspace/convention/sysv.h>
 #include <lib/util.h>
@@ -46,11 +47,11 @@
 
 #define STACK_PUSH(__rsp, __val) __rsp -= 8; __rsp[0] = __val;
 
-uintptr_t sysv_prepare_entry_stack(uint64_t *stack_top, struct ARC_ELFMeta *meta, char **env, int envc, char **argv, int argc) {
-        uint64_t *rsp = (uint64_t *)stack_top;
+int sysv_prepare_entry_stack(ARC_Thread *thread, struct ARC_ELFMeta *meta, char **env, int envc, char **argv, int argc) {
+        uint64_t *rsp = (uint64_t *)thread->pstack;
 
         if (rsp == NULL) {
-                return 0;
+                return -1;
         }
 
         // Push ENV
@@ -104,8 +105,11 @@ uintptr_t sysv_prepare_entry_stack(uint64_t *stack_top, struct ARC_ELFMeta *meta
                 STACK_PUSH(rsp, (uintptr_t)rbp_arg);
         }
 
-        // Push argc
         STACK_PUSH(rsp, argc);
 
-        return ((uintptr_t)stack_top - (uintptr_t)rsp);
+#ifdef ARC_TARGET_ARCH_X86_64
+        thread->context.frame.rsp = (uintptr_t)rsp;
+#endif
+
+        return 0;
 }
