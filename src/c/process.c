@@ -24,6 +24,7 @@
  *
  * @DESCRIPTION
 */
+#include "arch/convention/sysv.h"
 #include "arch/pager.h"
 #include "fs/vfs.h"
 #include "global.h"
@@ -31,7 +32,6 @@
 #include "lib/util.h"
 #include "mm/allocator.h"
 #include "mm/vmm.h"
-#include "userspace/convention/sysv.h"
 #include "userspace/loaders/elf.h"
 #include "userspace/thread.h"
 #include "userspace/process.h"
@@ -72,6 +72,17 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 		}
 	}
 
+	void *base = (void *)0x10000000000; // Figure this out somehow
+
+	ARC_VMMMeta *vmm = init_vmm(base, DEFAULT_MEMSIZE);
+	if (vmm == NULL) {
+		// TODO: Destroy page maps, destroy currently allocated meta data
+		//       free all memory mapped by ELF loader
+		ARC_DEBUG(ERR, "Failed to create process allocator\n");
+		return NULL;
+	}
+	process->allocator = vmm;
+
 	process->page_tables = page_tables;
 	process->pid = ARC_ATOMIC_INC(pid_counter);
 
@@ -100,16 +111,6 @@ struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 
 	struct ARC_ELFMeta *meta = load_elf(process->page_tables, file);
 
-	void *base = (void *)0x10000000000; // TODO: Determine this from ELF meta
-
-	ARC_VMMMeta *vmm = init_vmm(base, DEFAULT_MEMSIZE);
-	if (vmm == NULL) {
-		// TODO: Destroy page maps, destroy currently allocated meta data
-		//       free all memory mapped by ELF loader
-		ARC_DEBUG(ERR, "Failed to create process allocator\n");
-		return NULL;
-	}
-	process->allocator = vmm;
 
 	struct ARC_Thread *main = thread_create(process, meta->entry, DEFAULT_STACKSIZE);
 	if (main == NULL) {
