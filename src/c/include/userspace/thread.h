@@ -44,7 +44,7 @@ typedef struct ARC_Thread {
 	ARC_Spinlock lock;
 	uint32_t state;
 	int priority; // If -1, use process's priority, otherwise, use this one
-	ARC_Context context;
+	ARC_Context *context;
 } ARC_Thread;
 
 ARC_Thread *thread_create(struct ARC_Process *process, void *entry, size_t stack_size);

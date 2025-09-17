@@ -25,8 +25,8 @@
  * @DESCRIPTION
 */
 #include "arch/context.h"
-#include "arch/floats.h"
 #include "arch/pager.h"
+#include "config.h"
 #include "global.h"
 #include "lib/util.h"
 #include "mm/allocator.h"
@@ -56,8 +56,8 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 	memset(thread, 0, sizeof(*thread));
 	init_static_spinlock(&thread->lock);
 
-	if (init_floats(&thread->context, 0) != 0) {
-		ARC_DEBUG(ERR, "Failed to initialize floats for thread\n");
+	if ((thread->context = init_context(0)) == NULL) {
+		ARC_DEBUG(ERR, "Failed to initialize context\n");
 		goto clean_up;
 	}
 
@@ -71,25 +71,36 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
+	bool userspace = process->page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables);
+
 	if (pager_map(process->page_tables, (uintptr_t)thread->vstack, ARC_HHDM_TO_PHYS(thread->pstack), stack_size,
-		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (1 << ARC_PAGER_US)) != 0) {
+		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (userspace << ARC_PAGER_US)) != 0) {
 		ARC_DEBUG(ERR, "Failed to map memory for thread\n");
 		goto clean_up;
 	}
 
+	// NOTE: I am conflicted about this bit of code here. I want to keep
+	//       ifdefs out of the code as much as possible - so keeping code
+	//       that would need ifdefs in the architecture specific sections,
+	//       but a lot of this code is general only context prepartion is
+	//       tied to a specific architecture
+#ifdef ARC_TARGET_ARCH_X86_64
+		thread->context->frame.rip = (uintptr_t)entry;
+		thread->context->frame.cs = userspace ? 0x8 : 0x23;
+
+		thread->context->frame.ss = userspace ? 0x10 : 0x1b;
+		thread->context->frame.gpr.rbp = (uintptr_t)thread->vstack + stack_size - 16;
+		thread->context->frame.rsp = thread->context->frame.gpr.rbp;
+
+		thread->context->frame.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
+
+		thread->context->frame.gpr.cr0 = _x86_getCR0();
+		thread->context->frame.gpr.cr3 = ARC_HHDM_TO_PHYS(process->page_tables);
+		thread->context->frame.gpr.cr4 = _x86_getCR4();
+#endif
+
 	thread->state = ARC_THREAD_READY;
 	thread->stack_size = stack_size;
-
-#ifdef ARC_TARGET_ARCH_X86_64
-		thread->context.frame.rip = (uintptr_t)entry;
-		thread->context.frame.cs = process->page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x8 : 0x23;
-		thread->context.frame.ss = process->page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables) ? 0x10 : 0x1b;
-		thread->context.frame.gpr.rbp = (uintptr_t)thread->vstack + stack_size - 16;
-		thread->context.frame.rsp = thread->context.frame.gpr.rbp;
-		thread->context.frame.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
-		thread->context.cr0 = _x86_getCR0();
-		thread->context.cr4 = _x86_getCR4();
-#endif
 
 	if (process_associate_thread(process, thread) != 0) {
 		ARC_DEBUG(ERR, "Failed to associate thread with process\n");
@@ -102,6 +113,10 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 	return thread;
 
 	clean_up:;
+	if (thread->context != NULL) {
+		uninit_context(thread->context);
+	}
+
 	if (thread->pstack != NULL) {
 		pmm_free(thread->pstack);
 	}
