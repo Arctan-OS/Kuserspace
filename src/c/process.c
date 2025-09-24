@@ -26,6 +26,8 @@
 */
 #include "arch/convention/sysv.h"
 #include "arch/pager.h"
+#include "arch/smp.h"
+#include "config.h"
 #include "fs/vfs.h"
 #include "global.h"
 #include "lib/atomics.h"
@@ -69,6 +71,11 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 			//       only has the most basic functions mapped and not the whole kernel?
 			pager_clone(page_tables, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
 				    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__), 0);
+
+			// pager_map(page_tables, (uintptr_t)process, ARC_HHDM_TO_PHYS(process), sizeof(*process),
+                        //          (1 << ARC_PAGER_NX) | (1 << ARC_PAGER_RW));
+
+			smp_map_processor_structures(page_tables);
 		}
 	}
 
@@ -85,6 +92,7 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 
 	process->page_tables = page_tables;
 	process->pid = ARC_ATOMIC_INC(pid_counter);
+	process->userspace = userspace;
 
 	return process;
 }
@@ -137,6 +145,7 @@ int process_associate_thread(struct ARC_Process *process, struct ARC_Thread *thr
 
 	ARC_ThreadElement *elem = alloc(sizeof(*elem));
 	elem->t = thread;
+	thread->parent = process;
 	ARC_ATOMIC_XCHG(&process->threads, &elem, &elem->next);
 
 	return 0;

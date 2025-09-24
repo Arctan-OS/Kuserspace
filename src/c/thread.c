@@ -28,17 +28,21 @@
 #include "arch/pager.h"
 #include "config.h"
 #include "global.h"
+#include "lib/atomics.h"
 #include "lib/util.h"
 #include "mm/allocator.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "mp/scheduler.h"
 #include "userspace/process.h"
+#include <stdio.h>
 #include "userspace/thread.h"
 
 #ifdef ARC_TARGET_ARCH_X86_64
 #include "arch/x86-64/ctrl_regs.h"
 #endif
+
+static uint64_t tid_counter = 0;
 
 ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) {
 	if (process == NULL || entry == NULL || stack_size == 0) {
@@ -61,6 +65,8 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
+	thread->stack_size = stack_size;
+
 	if ((thread->pstack = pmm_alloc(stack_size)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate physical memory for thread\n");
 		goto clean_up;
@@ -71,11 +77,15 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
-	bool userspace = process->page_tables == (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables);
-
 	if (pager_map(process->page_tables, (uintptr_t)thread->vstack, ARC_HHDM_TO_PHYS(thread->pstack), stack_size,
-		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (userspace << ARC_PAGER_US)) != 0) {
+		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (process->userspace << ARC_PAGER_US)) != 0) {
 		ARC_DEBUG(ERR, "Failed to map memory for thread\n");
+		goto clean_up;
+	}
+
+	if (pager_map(process->page_tables, (uintptr_t)thread->context, ARC_HHDM_TO_PHYS(thread->context), sizeof(*thread->context),
+                     (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX)) != 0) {
+		ARC_DEBUG(ERR, "Failed to map in thread's context\n");
 		goto clean_up;
 	}
 
@@ -86,9 +96,9 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 	//       tied to a specific architecture
 #ifdef ARC_TARGET_ARCH_X86_64
 		thread->context->frame.rip = (uintptr_t)entry;
-		thread->context->frame.cs = userspace ? 0x8 : 0x23;
+		thread->context->frame.cs = process->userspace ? 0x23 : 0x8;
 
-		thread->context->frame.ss = userspace ? 0x10 : 0x1b;
+		thread->context->frame.ss = process->userspace ? 0x1b : 0x10;
 		thread->context->frame.gpr.rbp = (uintptr_t)thread->vstack + stack_size - 16;
 		thread->context->frame.rsp = thread->context->frame.gpr.rbp;
 
@@ -100,7 +110,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 #endif
 
 	thread->state = ARC_THREAD_READY;
-	thread->stack_size = stack_size;
+	thread->tid = ARC_ATOMIC_INC(tid_counter);
 
 	if (process_associate_thread(process, thread) != 0) {
 		ARC_DEBUG(ERR, "Failed to associate thread with process\n");
@@ -108,7 +118,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
-	ARC_DEBUG(INFO, "Created thread (%p)\n", entry);
+	ARC_DEBUG(INFO, "Created thread %lu (%p)\n", thread->tid, thread);
 
 	return thread;
 

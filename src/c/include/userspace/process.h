@@ -47,6 +47,7 @@ typedef struct ARC_Process {
 	struct ARC_File *file_table[ARC_PROCESS_FILE_LIMIT];
 	uint64_t pid;
 	int priority;
+	bool userspace;
 } ARC_Process;
 
 ARC_Process *process_create(bool userspace, void *page_tables);
