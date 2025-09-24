@@ -41,7 +41,8 @@
 #include <mm/pmm.h>
 
 static int syscall_tcb_set(void *arg) {
-	(void)arg;
+	ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	context_set_tcb(desc->thread->context, arg);
 
 	return 0;
 }
