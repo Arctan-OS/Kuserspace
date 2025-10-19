@@ -54,32 +54,50 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 
 	memset(process, 0, sizeof(*process));
 
-	if (page_tables == NULL) {
-		if (!userspace) {
-			// Not a userspace process
-			page_tables = (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables);
-		} else {
-			page_tables = pager_create_page_tables();
+	if (!userspace) {
+		// Not a userspace process
+		process->page_tables.kernel = (void *)ARC_PHYS_TO_HHDM(Arc_KernelPageTables);
+	} else {
+		void *kernel = pager_create_page_tables();
 
-			if (page_tables == NULL) {
-				ARC_DEBUG(ERR, "Failed to allocate page tables\n");
+		if (kernel == NULL) {
+			ARC_DEBUG(ERR, "Failed to allocate kernel page tables\n");
+			free(process);
+			return NULL;
+		}
+
+		void *user = page_tables;
+
+		if (page_tables == NULL) {
+			user = pager_create_page_tables();
+
+			if (user == NULL) {
+				ARC_DEBUG(ERR, "Failed to allocate user page tables\n");
+				free(kernel);
 				free(process);
 				return NULL;
 			}
-
-			// TODO: Possibly isolate the kernel from the userspace more completely such that user
-			//       only has the most basic functions mapped and not the whole kernel?
-			pager_clone(page_tables, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
-				    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__), 0);
-
-			// pager_map(page_tables, (uintptr_t)process, ARC_HHDM_TO_PHYS(process), sizeof(*process),
-                        //          (1 << ARC_PAGER_NX) | (1 << ARC_PAGER_RW));
-
-			smp_map_processor_structures(page_tables);
 		}
+
+		pager_clone(user, (uintptr_t)&__USERSPACE_START__, (uintptr_t)&__USERSPACE_START__,
+			    ((uintptr_t)&__USERSPACE_END__ - (uintptr_t)&__USERSPACE_START__), 0);
+
+		// NOTE: This is fine as it doesn't leak kernel heap into userspace as sizeof(*process) >= PAGE_SIZE
+		pager_map(user, (uintptr_t)process, ARC_HHDM_TO_PHYS(process), sizeof(*process),
+			  (1 << ARC_PAGER_NX) | (1 << ARC_PAGER_RW));
+
+		smp_map_processor_structures(user);
+
+		pager_clone(kernel, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
+			    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__), 0);
+
+		smp_map_processor_structures(kernel);
+
+		process->page_tables.user = user;
+		process->page_tables.kernel = kernel;
 	}
 
-	void *base = (void *)0x10000000000; // Figure this out somehow
+	void *base = (void *)0x10000000000; // TODO: Figure this out somehow
 
 	ARC_VMMMeta *vmm = init_vmm(base, DEFAULT_MEMSIZE);
 	if (vmm == NULL) {
@@ -90,7 +108,6 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 	}
 	process->allocator = vmm;
 
-	process->page_tables = page_tables;
 	process->pid = ARC_ATOMIC_INC(pid_counter);
 	process->userspace = userspace;
 
@@ -117,8 +134,7 @@ struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 		return  NULL;
 	}
 
-	struct ARC_ELFMeta *meta = load_elf(process->page_tables, file);
-
+	struct ARC_ELFMeta *meta = load_elf(process->page_tables.user, file);
 
 	struct ARC_Thread *main = thread_create(process, meta->entry, DEFAULT_STACKSIZE);
 	if (main == NULL) {
@@ -195,4 +211,14 @@ int process_delete(struct ARC_Process *process) {
 	}
 
 	return 0;
+}
+
+int process_swap_out(ARC_Process *process) {
+	ARC_DEBUG(WARN, "Definitely swapping out process %p\n", process);
+	return -1;
+}
+
+int process_swap_in(ARC_Process *process) {
+	ARC_DEBUG(WARN, "Definitely swapping in process %p\n", process);
+	return -1;
 }

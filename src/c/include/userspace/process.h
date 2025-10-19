@@ -30,6 +30,7 @@
 #include "config.h"
 #include "mm/vmm.h"
 #include "userspace/thread.h"
+#include "util.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -43,12 +44,16 @@ typedef struct ARC_Process {
 	ARC_VMMMeta *allocator;
 	ARC_ThreadElement *threads;
 	// NOTE: The page_tables pointer here points to an HHDM address
-	void *page_tables;
+	struct {
+		void *user;
+		void *kernel;
+	} page_tables;
 	struct ARC_File *file_table[ARC_PROCESS_FILE_LIMIT];
 	uint64_t pid;
 	int priority;
 	bool userspace;
 } ARC_Process;
+STATIC_ASSERT(sizeof(ARC_Process) >= PAGE_SIZE, "Kernel heap may leak into userspace, increase ARC_PROCESS_FILE_LIMIT");
 
 ARC_Process *process_create(bool userspace, void *page_tables);
 ARC_Process *process_create_from_file(bool userspace, char *filepath);
@@ -56,5 +61,7 @@ int process_associate_thread(ARC_Process *process, ARC_Thread *thread);
 int process_disassociate_thread(ARC_Process *process, ARC_Thread *thread);
 int process_fork(ARC_Process *process);
 int process_delete(ARC_Process *process);
+int process_swap_out(ARC_Process *process);
+int process_swap_in(ARC_Process *process);
 
 #endif
