@@ -77,17 +77,17 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
-	if (pager_map(process->page_tables, (uintptr_t)thread->vstack, ARC_HHDM_TO_PHYS(thread->pstack), stack_size,
+	if (pager_map(process->page_tables.user, (uintptr_t)thread->vstack, ARC_HHDM_TO_PHYS(thread->pstack), stack_size,
 		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (process->userspace << ARC_PAGER_US)) != 0) {
 		ARC_DEBUG(ERR, "Failed to map memory for thread\n");
 		goto clean_up;
 	}
 
-	if (pager_map(process->page_tables, (uintptr_t)thread->context, ARC_HHDM_TO_PHYS(thread->context), sizeof(*thread->context),
-                     (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX)) != 0) {
-		ARC_DEBUG(ERR, "Failed to map in thread's context\n");
-		goto clean_up;
-	}
+//	if (pager_map(process->page_tables.user, (uintptr_t)thread->context, ARC_HHDM_TO_PHYS(thread->context), sizeof(*thread->context),
+//                     (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX)) != 0) {
+//		ARC_DEBUG(ERR, "Failed to map in thread's context\n");
+//		goto clean_up;
+//	}
 
 	// NOTE: I am conflicted about this bit of code here. I want to keep
 	//       ifdefs out of the code as much as possible - so keeping code
@@ -105,7 +105,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		thread->context->frame.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
 
 		thread->context->frame.gpr.cr0 = _x86_getCR0();
-		thread->context->frame.gpr.cr3 = ARC_HHDM_TO_PHYS(process->page_tables);
+		thread->context->frame.gpr.cr3 = ARC_HHDM_TO_PHYS(process->page_tables.user);
 		thread->context->frame.gpr.cr4 = _x86_getCR4();
 #endif
 
@@ -114,7 +114,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 
 	if (process_associate_thread(process, thread) != 0) {
 		ARC_DEBUG(ERR, "Failed to associate thread with process\n");
-		pager_unmap(process->page_tables, (uintptr_t)thread->vstack, stack_size, NULL);
+		pager_unmap(process->page_tables.user, (uintptr_t)thread->vstack, stack_size, NULL);
 		goto clean_up;
 	}
 
