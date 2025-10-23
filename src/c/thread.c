@@ -60,7 +60,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 	memset(thread, 0, sizeof(*thread));
 	init_static_spinlock(&thread->lock);
 
-	if ((thread->context = init_context(0)) == NULL) {
+	if ((thread->context = init_context(1 << ARC_CONTEXT_FLAG_FLOATS)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to initialize context\n");
 		goto clean_up;
 	}
@@ -104,9 +104,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 
 		thread->context->frame.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
 
-		thread->context->frame.gpr.cr0 = _x86_getCR0();
 		thread->context->frame.gpr.cr3 = ARC_HHDM_TO_PHYS(process->page_tables.user);
-		thread->context->frame.gpr.cr4 = _x86_getCR4();
 #endif
 
 	thread->state = ARC_THREAD_READY;
