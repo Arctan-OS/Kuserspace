@@ -176,8 +176,8 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 		return -1;
 	}
 
-	struct ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
-	struct ARC_VMMMeta *vmeta = desc->thread->parent->allocator;
+	ARC_ProcessorDescriptor *desc = smp_get_proc_desc();
+	ARC_VMMMeta *vmeta = desc->process->allocator;
 	
 	*ptr = NULL;
 	
@@ -196,7 +196,7 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	}
 
 	// TODO: Properly set the flags
-	if (pager_map(NULL, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
+	if (pager_map(desc->process->page_tables.user, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
 		if (hint != NULL) {
 			hint = NULL;
 			goto retry;
@@ -206,7 +206,7 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	}
 
 	if (fd >= 0 && fd <= ARC_PROCESS_FILE_LIMIT - 1) {
-		struct ARC_File *file = desc->thread->parent->file_table[fd];
+		struct ARC_File *file = desc->process->file_table[fd];
 
 		if (file != NULL) {
 			vfs_seek(file, offset, SEEK_SET);
