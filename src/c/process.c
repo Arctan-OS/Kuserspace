@@ -79,8 +79,8 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 			}
 		}
 
-		pager_clone(user, (uintptr_t)&__USERSPACE_START__, (uintptr_t)&__USERSPACE_START__,
-			    ((uintptr_t)&__USERSPACE_END__ - (uintptr_t)&__USERSPACE_START__), 0);
+		pager_clone(user, NULL, (uintptr_t)&__USERSPACE_START__, (uintptr_t)&__USERSPACE_START__,
+			    ((uintptr_t)&__USERSPACE_END__ - (uintptr_t)&__USERSPACE_START__));
 
 		// NOTE: This is fine as it doesn't leak kernel heap into userspace as sizeof(*process) >= PAGE_SIZE
 		pager_map(user, (uintptr_t)process, ARC_HHDM_TO_PHYS(process), sizeof(*process),
@@ -88,8 +88,8 @@ struct ARC_Process *process_create(bool userspace, void *page_tables) {
 
 		smp_map_processor_structures(user);
 
-		pager_clone(kernel, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
-			    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__), 0);
+		pager_clone(kernel, NULL, (uintptr_t)&__KERNEL_START__, (uintptr_t)&__KERNEL_START__,
+			    ((uintptr_t)&__KERNEL_END__ - (uintptr_t)&__KERNEL_START__));
 
 		smp_map_processor_structures(kernel);
 
