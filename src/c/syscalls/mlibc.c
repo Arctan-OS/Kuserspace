@@ -166,11 +166,11 @@ static int syscall_open(char const *name, int flags, unsigned int mode, int *fd)
 }
 
 static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, int fd, long offset, void **ptr) {
-	int prot = prot_flags >> 32;
-	int flags = prot_flags & UINT32_MAX;
+	int _prot = prot_flags >> 32;
+	int _flags = prot_flags & UINT32_MAX;
 
-	(void)prot;
-	(void)flags;
+	(void)_prot;
+	(void)_flags;
 
 	if (size == 0 || ptr == NULL) {
 		return -1;
@@ -196,7 +196,9 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 	}
 
 	// TODO: Properly set the flags
-	if (pager_map(desc->process->page_tables.user, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW)) != 0) {
+	uint32_t flags = (1 << ARC_PAGER_US) | (1 << ARC_PAGER_RW);
+
+	if (pager_map(desc->process->page_tables.user, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, flags) != 0) {
 		if (hint != NULL) {
 			hint = NULL;
 			goto retry;
@@ -204,6 +206,11 @@ static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, i
 			return -4;
 		}
 	}
+
+	// NOTE: This call can fail, the page fault handler should
+	//       take care of the case when such a memory region needs
+	//       to be accessed and isn't already mapped in
+	pager_map(desc->process->page_tables.kernel, (uintptr_t)vaddr, ARC_HHDM_TO_PHYS(paddr), size, flags);
 
 	if (fd >= 0 && fd <= ARC_PROCESS_FILE_LIMIT - 1) {
 		struct ARC_File *file = desc->process->file_table[fd];
@@ -230,7 +237,12 @@ static int syscall_vm_unmap(void *address, unsigned long size) {
 
 	vmm_free(vmeta, address);
 	void *paddr = NULL;
-	if (pager_unmap(NULL, (uintptr_t)address, size, &paddr) != 0) {
+	if (pager_unmap(desc->process->page_tables.user, (uintptr_t)address, size, &paddr) != 0) {
+		ARC_DEBUG(ERR, "I do not know how to recover from this\n");
+		ARC_HANG;
+	}
+
+	if (pager_unmap(desc->process->page_tables.kernel, (uintptr_t)address, size, NULL) != 0) {
 		ARC_DEBUG(ERR, "I do not know how to recover from this\n");
 		ARC_HANG;
 	}
