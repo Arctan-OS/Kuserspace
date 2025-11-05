@@ -27,6 +27,7 @@
 #ifndef ARC_ARCH_PROCESS_H
 #define ARC_ARCH_PROCESS_H
 
+#include "arctan.h"
 #include "config.h"
 #include "mm/vmm.h"
 #include "userspace/thread.h"
@@ -50,6 +51,7 @@ typedef struct ARC_Process {
 	} page_tables;
 	struct ARC_File *file_table[ARC_PROCESS_FILE_LIMIT];
 	uint64_t pid;
+	ARC_ProcessorFeatures features; // Features needed by the process
 	int priority;
 	bool userspace;
 } ARC_Process;
