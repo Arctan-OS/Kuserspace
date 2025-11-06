@@ -36,10 +36,13 @@
 
 typedef struct ARC_Thread {
 	struct ARC_Process *parent;
-	void *pstack;
-	void *vstack;
-	size_t stack_size;
+	struct {
+		void *phys;
+		void *virt;
+		size_t size;
+	} stack;
 	uint64_t tid;
+	ARC_ProcessorFeatures features;
 	ARC_Profile prof;
 	ARC_Spinlock lock;
 	uint32_t state;

@@ -27,6 +27,7 @@
 #ifndef ARC_ARCH_PROCESS_H
 #define ARC_ARCH_PROCESS_H
 
+#include "arch/x86-64/config.h"
 #include "arctan.h"
 #include "config.h"
 #include "mm/vmm.h"
@@ -44,14 +45,12 @@ typedef struct ARC_ThreadElement {
 typedef struct ARC_Process {
 	ARC_VMMMeta *allocator;
 	ARC_ThreadElement *threads;
-	// NOTE: The page_tables pointer here points to an HHDM address
 	struct {
 		void *user;
 		void *kernel;
 	} page_tables;
 	struct ARC_File *file_table[ARC_PROCESS_FILE_LIMIT];
 	uint64_t pid;
-	ARC_ProcessorFeatures features; // Features needed by the process
 	int priority;
 	bool userspace;
 } ARC_Process;
