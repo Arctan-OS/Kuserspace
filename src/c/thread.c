@@ -39,7 +39,7 @@
 #include "userspace/thread.h"
 
 #ifdef ARC_TARGET_ARCH_X86_64
-#include "arch/x86-64/ctrl_regs.h"
+        #include "arch/x86-64/ctrl_regs.h"
 #endif
 
 static uint64_t tid_counter = 0;
@@ -50,7 +50,7 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		return NULL;
 	}
 
-	struct ARC_Thread *thread = (struct ARC_Thread *)alloc(sizeof(*thread));
+	ARC_Thread *thread = (struct ARC_Thread *)alloc(sizeof(*thread));
 
 	if (thread == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate thread\n");
@@ -60,59 +60,38 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 	memset(thread, 0, sizeof(*thread));
 	init_static_spinlock(&thread->lock);
 
-	if ((thread->context = init_context(1 << ARC_CONTEXT_FLAG_FLOATS)) == NULL) {
+	if ((thread->context = init_context(1 << ARC_CONTEXT_FLAG_FLOATS, &thread->features)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to initialize context\n");
 		goto clean_up;
 	}
 
-	thread->stack_size = stack_size;
+	thread->stack.size = stack_size;
 
-	if ((thread->pstack = pmm_alloc(stack_size)) == NULL) {
+	if ((thread->stack.phys = pmm_alloc(stack_size)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate physical memory for thread\n");
 		goto clean_up;
 	}
 
-	if ((thread->vstack = (void *)vmm_alloc(process->allocator, stack_size)) == NULL) {
+	if ((thread->stack.virt = (void *)vmm_alloc(process->allocator, stack_size)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate virtual memory for thread\n");
 		goto clean_up;
 	}
 
-	if (pager_map(process->page_tables.user, (uintptr_t)thread->vstack, ARC_HHDM_TO_PHYS(thread->pstack), stack_size,
+	if (pager_map(process->page_tables.user, (uintptr_t)thread->stack.virt, ARC_HHDM_TO_PHYS(thread->stack.phys), stack_size,
 		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (process->userspace << ARC_PAGER_US)) != 0) {
 		ARC_DEBUG(ERR, "Failed to map memory for thread\n");
 		goto clean_up;
 	}
 
-//	if (pager_map(process->page_tables.user, (uintptr_t)thread->context, ARC_HHDM_TO_PHYS(thread->context), sizeof(*thread->context),
-//                     (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX)) != 0) {
-//		ARC_DEBUG(ERR, "Failed to map in thread's context\n");
-//		goto clean_up;
-//	}
-
-	// NOTE: I am conflicted about this bit of code here. I want to keep
-	//       ifdefs out of the code as much as possible - so keeping code
-	//       that would need ifdefs in the architecture specific sections,
-	//       but a lot of this code is general only context prepartion is
-	//       tied to a specific architecture
-#ifdef ARC_TARGET_ARCH_X86_64
-		thread->context->frame.rip = (uintptr_t)entry;
-		thread->context->frame.cs = process->userspace ? 0x23 : 0x8;
-
-		thread->context->frame.ss = process->userspace ? 0x1b : 0x10;
-		thread->context->frame.gpr.rbp = (uintptr_t)thread->vstack + stack_size - 16;
-		thread->context->frame.rsp = thread->context->frame.gpr.rbp;
-
-		thread->context->frame.rflags = (1 << 9) | (1 << 1) | (0b11 << 12);
-
-		thread->context->frame.gpr.cr3 = ARC_HHDM_TO_PHYS(process->page_tables.user);
-#endif
+	void *stack = thread->stack.virt + thread->stack.size - 16;
+	context_setup_for_thread(thread->context, entry, stack, process->page_tables.user, process->userspace);
 
 	thread->state = ARC_THREAD_READY;
 	thread->tid = ARC_ATOMIC_INC(tid_counter);
 
 	if (process_associate_thread(process, thread) != 0) {
 		ARC_DEBUG(ERR, "Failed to associate thread with process\n");
-		pager_unmap(process->page_tables.user, (uintptr_t)thread->vstack, stack_size, NULL);
+		pager_unmap(process->page_tables.user, (uintptr_t)thread->stack.virt, stack_size, NULL);
 		goto clean_up;
 	}
 
@@ -125,12 +104,12 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		uninit_context(thread->context);
 	}
 
-	if (thread->pstack != NULL) {
-		pmm_free(thread->pstack);
+	if (thread->stack.phys != NULL) {
+		pmm_free(thread->stack.phys);
 	}
 
-	if (thread->vstack != NULL) {
-		vmm_free(process->allocator, thread->vstack);
+	if (thread->stack.virt != NULL) {
+		vmm_free(process->allocator, thread->stack.virt);
 	}
 
 	free(thread);
