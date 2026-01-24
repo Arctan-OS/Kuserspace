@@ -103,7 +103,7 @@ static int syscall_write(int fd, void const *buffer, unsigned long count, long *
 
 #ifdef ARC_DEBUG_ENABLE
 	if (fd == 0) {
-		printf("%.*s", count, buffer);
+		printf("%.*s", (int)count, (char *)buffer);
 	}
 #endif
 
