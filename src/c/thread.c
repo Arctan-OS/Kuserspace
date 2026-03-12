@@ -65,6 +65,8 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
+        // TODO: Use conv_get_stack()?
+        
 	thread->stack.size = stack_size;
 
 	if ((thread->stack.phys = pmm_alloc(stack_size)) == NULL) {

@@ -24,7 +24,7 @@
  *
  * @DESCRIPTION
 */
-#include "arch/convention/sysv.h"
+#include "arch/convention.h"
 #include "arch/pager.h"
 #include "arch/smp.h"
 #include "config.h"
@@ -144,7 +144,7 @@ struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 	}
 
 	char *argv[] = {"hello", "world"};
-	sysv_prepare_entry_stack(main, meta, NULL, 0, argv, 2);
+	conv_prepare_entry_stack(main, meta, NULL, 0, argv, 2);
 
 	free(meta);
 
