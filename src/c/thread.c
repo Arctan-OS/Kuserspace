@@ -37,10 +37,7 @@
 #include "userspace/process.h"
 #include <stdio.h>
 #include "userspace/thread.h"
-
-#ifdef ARC_TARGET_ARCH_X86_64
-        #include "arch/x86-64/ctrl_regs.h"
-#endif
+#include "arch/convention.h"
 
 static uint64_t tid_counter = 0;
 
@@ -65,35 +62,40 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		goto clean_up;
 	}
 
-        // TODO: Use conv_get_stack()?
+        thread->kstack.size = ARC_STD_KSTACK_SIZE;
         
-	thread->stack.size = stack_size;
+        if ((thread->kstack.hhdm = alloc(ARC_STD_KSTACK_SIZE)) == NULL) {
+                ARC_DEBUG(ERR, "Failed to allocate kstack\n");
+                goto clean_up;
+        }
+        
+	thread->ustack.size = stack_size;
 
-	if ((thread->stack.phys = pmm_alloc(stack_size)) == NULL) {
+	if ((thread->ustack.phys = pmm_alloc(stack_size)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate physical memory for thread\n");
 		goto clean_up;
 	}
 
-	if ((thread->stack.virt = (void *)vmm_alloc(process->allocator, stack_size)) == NULL) {
+	if ((thread->ustack.virt = (void *)vmm_alloc(process->allocator, stack_size)) == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate virtual memory for thread\n");
 		goto clean_up;
 	}
 
-	if (pager_map(process->page_tables.user, (uintptr_t)thread->stack.virt, ARC_HHDM_TO_PHYS(thread->stack.phys), stack_size,
+	if (pager_map(process->page_tables.user, (uintptr_t)thread->ustack.virt, ARC_HHDM_TO_PHYS(thread->ustack.phys), stack_size,
 		      (1 << ARC_PAGER_RW) | (1 << ARC_PAGER_NX) | (process->userspace << ARC_PAGER_US)) != 0) {
 		ARC_DEBUG(ERR, "Failed to map memory for thread\n");
 		goto clean_up;
 	}
 
-	void *stack = thread->stack.virt + thread->stack.size - 16;
-	context_setup_for_thread(thread->context, entry, stack, process->page_tables.user, process->userspace);
+        void *stack = (void *)STACK_START(thread->ustack.virt, thread->ustack.size, 16);
+        context_setup_for_thread(thread->context, entry, stack, process->page_tables.user, process->userspace);
 
 	thread->state = ARC_THREAD_READY;
 	thread->tid = ARC_ATOMIC_INC(tid_counter);
 
 	if (process_associate_thread(process, thread) != 0) {
 		ARC_DEBUG(ERR, "Failed to associate thread with process\n");
-		pager_unmap(process->page_tables.user, (uintptr_t)thread->stack.virt, stack_size, NULL);
+		pager_unmap(process->page_tables.user, (uintptr_t)thread->ustack.virt, stack_size, NULL);
 		goto clean_up;
 	}
 
@@ -106,13 +108,17 @@ ARC_Thread *thread_create(ARC_Process *process, void *entry, size_t stack_size) 
 		uninit_context(thread->context);
 	}
 
-	if (thread->stack.phys != NULL) {
-		pmm_free(thread->stack.phys);
+	if (thread->ustack.phys != NULL) {
+		pmm_free(thread->ustack.phys);
 	}
 
-	if (thread->stack.virt != NULL) {
-		vmm_free(process->allocator, thread->stack.virt);
+	if (thread->ustack.virt != NULL) {
+		vmm_free(process->allocator, thread->ustack.virt);
 	}
+
+        if (thread->kstack.hhdm != NULL) {
+                free(thread->kstack.hhdm);
+        }
 
 	free(thread);
 

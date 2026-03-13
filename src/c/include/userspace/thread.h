@@ -40,7 +40,11 @@ typedef struct ARC_Thread {
 		void *phys;
 		void *virt;
 		size_t size;
-	} stack;
+	} ustack;
+        struct {
+                void *hhdm;
+                size_t size;
+        } kstack;
 	uint64_t tid;
 	ARC_ProcessorFeatures features;
 	ARC_Profile prof;
