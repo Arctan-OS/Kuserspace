@@ -147,6 +147,8 @@ static int syscall_close(int fd) {
 }
 
 static int syscall_open(char const *name, int flags, unsigned int mode, int *fd) {
+        printf("syscall_open\n");
+        
 	struct ARC_File *file = NULL;
 	if (vfs_open((char *)name, flags, mode, &file) != 0) {
 		*fd = -1;
@@ -166,6 +168,8 @@ static int syscall_open(char const *name, int flags, unsigned int mode, int *fd)
 }
 
 static int syscall_vm_map(void *hint, unsigned long size, uint64_t prot_flags, int fd, long offset, void **ptr) {
+        printf("vm_map (%p %lu %lu %d %lu %p)\n", hint, size, prot_flags, fd, offset, ptr);
+        
 	int _prot = prot_flags >> 32;
 	int _flags = prot_flags & UINT32_MAX;
 
@@ -258,18 +262,18 @@ static int syscall_libc_log(const char *str) {
 	return 0;
 }
 
-int (*Arc_SyscallTable[])() = {
-	[0] = syscall_tcb_set,
-	[1] = syscall_futex_wait,
-	[2] = syscall_futex_wake,
-	[3] = syscall_clock_get,
-	[4] = syscall_exit,
-	[5] = syscall_seek,
-	[6] = syscall_write,
-	[7] = syscall_read,
-	[8] = syscall_close,
-	[9] = syscall_open,
-	[10] = syscall_vm_map,
-	[11] = syscall_vm_unmap,
-	[12] = syscall_libc_log,
+uintptr_t Arc_SyscallTable[] = {
+	[0] =  (uintptr_t)syscall_tcb_set,
+        [1] =  (uintptr_t)syscall_futex_wait,
+        [2] =  (uintptr_t)syscall_futex_wake,
+        [3] =  (uintptr_t)syscall_clock_get,
+        [4] =  (uintptr_t)syscall_exit,
+        [5] =  (uintptr_t)syscall_seek,
+        [6] =  (uintptr_t)syscall_write,
+        [7] =  (uintptr_t)syscall_read,
+        [8] =  (uintptr_t)syscall_close,
+        [9] =  (uintptr_t)syscall_open,
+        [10] = (uintptr_t)syscall_vm_map,
+        [11] = (uintptr_t)syscall_vm_unmap,
+        [12] = (uintptr_t)syscall_libc_log,
 };
