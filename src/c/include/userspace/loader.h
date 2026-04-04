@@ -31,7 +31,7 @@
 #include "drivers/resource.h"
 
 #define ARC_REGISTER_LOADER(group, name)         \
-	ARC_ProgramLoaderDef _ldrdefs_##name_##group
+	ARC_ProgramLoaderDef _ldrdefs_##name##_##group
 
 #define ARC_SHARE_LOADER_INDICES(...) ;
 
@@ -42,21 +42,23 @@ enum ARC_LOADER_GROUP {
 
 ARC_SHARE_LOADER_INDICES(ARC_LDRGRP_64BIT, ARC_LDRGRP_32BIT)
 
-typedef struct ARC_ProgramLoaderDef {
-        int (*load)  (void *data, void *, size_t);
-        int (*unload)(void *data, void *, size_t);
-        int (*uninit)(void *data);
-        int (*init)  (void *data, ARC_File *);
-} ARC_ProgramLoaderDef;
-
 typedef struct ARC_ProgramMeta {
         void *entry;
         size_t size;
         void *loader_data;
-        const ARC_ProgramLoaderDef *loader;
+        const struct ARC_ProgramLoaderDef *loader;
 } ARC_ProgramMeta;
+        
+typedef struct ARC_ProgramLoaderDef {
+        int (*load)  (ARC_ProgramMeta *, void *virt, size_t);
+        int (*unload)(ARC_ProgramMeta *, void *virt, size_t);
+        int (*uninit)(ARC_ProgramMeta *);
+        int (*init)  (ARC_ProgramMeta *, ARC_File *);
+} ARC_ProgramLoaderDef;
 
+int program_loader_load(ARC_ProgramMeta *, void *, size_t);
+int program_loader_unload(ARC_ProgramMeta *, void *, size_t);
 int uninit_program_loader(ARC_ProgramMeta *);
-ARC_ProgramMeta *init_program_loader(int);
+ARC_ProgramMeta *init_program_loader(int group, int index, ARC_File *);
 
 #endif
