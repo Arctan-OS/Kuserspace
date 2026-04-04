@@ -34,12 +34,11 @@
 #include "lib/util.h"
 #include "mm/allocator.h"
 #include "mm/vmm.h"
-#include "userspace/loaders/elf.h"
 #include "userspace/thread.h"
 #include "userspace/process.h"
 
 #define DEFAULT_MEMSIZE 0x1000 * 4096
-#define DEFAULT_STACKSIZE 0x2000
+#define DEFAULT_STACKSIZE 0x4000
 
 static uint64_t pid_counter = 0;
 
