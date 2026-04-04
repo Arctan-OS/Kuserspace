@@ -1,0 +1,8 @@
+#ifndef AUTOGEN_ARC_USERPACE_LOADER_DEFS_H
+#define AUTOGEN_ARC_USERPACE_LOADER_DEFS_H
+
+#include "userspace/loader.h"
+
+\{0\}
+
+#endif // AUTOGEN_ARC_DRIVERS_DRI_DEFS
