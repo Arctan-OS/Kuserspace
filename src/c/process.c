@@ -34,8 +34,10 @@
 #include "lib/util.h"
 #include "mm/allocator.h"
 #include "mm/vmm.h"
+#include "userspace/loader_defs.h"
 #include "userspace/thread.h"
 #include "userspace/process.h"
+#include "userspace/loader.h"
 
 #define DEFAULT_MEMSIZE 0x1000 * 4096
 #define DEFAULT_STACKSIZE 0x4000
@@ -119,21 +121,26 @@ struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 		return NULL;
 	}
 
-	struct ARC_File *file = NULL;
+	ARC_File *file = NULL;
 
 	if (vfs_open(filepath, 0, ARC_STD_PERM, &file) != 0) {
 		ARC_DEBUG(ERR, "Failed to create process, failed to open file\n");
 		return NULL;
 	}
 
-	struct ARC_Process *process = process_create(userspace, NULL);
+	ARC_Process *process = process_create(userspace, NULL);
 
 	if (process == NULL) {
 		ARC_DEBUG(ERR, "Failed to allocate process\n");
-		return  NULL;
+		return NULL;
 	}
 
-	struct ARC_ELFMeta *meta = load_elf(process->page_tables.user, file);
+        ARC_ProgramMeta *meta = init_program_loader(ARC_LDRGRP_64BIT, ARC_LOADER_64BIT_ELF, file);
+
+        if (meta == NULL) {
+                ARC_DEBUG(ERR, "Failed to initialize program loader\n");
+                return NULL;
+        }
 
 	struct ARC_Thread *main = thread_create(process, meta->entry, DEFAULT_STACKSIZE);
 	if (main == NULL) {
