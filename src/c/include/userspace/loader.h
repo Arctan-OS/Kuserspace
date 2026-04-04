@@ -31,11 +31,16 @@
 #include "drivers/resource.h"
 
 #define ARC_REGISTER_LOADER(group, name)         \
-	ARC_ProgramLoaderDef _ldrdefs_##name
+	ARC_ProgramLoaderDef _ldrdefs_##name_##group
+
+#define ARC_SHARE_LOADER_INDICES(...) ;
 
 enum ARC_LOADER_GROUP {
-        ARC_LDRGRP_SOLO = 0,
+        ARC_LDRGRP_64BIT = 0,
+        ARC_LDRGRP_32BIT,
 };
+
+ARC_SHARE_LOADER_INDICES(ARC_LDRGRP_64BIT, ARC_LDRGRP_32BIT)
 
 typedef struct ARC_ProgramLoaderDef {
         int (*load)  (void *data, void *, size_t);

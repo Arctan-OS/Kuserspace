@@ -3,6 +3,8 @@
 
 #include "userspace/loader.h"
 
+#include <stddef.h>
+
 \{0\}
 
 #endif // AUTOGEN_ARC_DRIVERS_DRI_DEFS

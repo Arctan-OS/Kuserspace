@@ -291,7 +291,7 @@ struct ARC_ELFMeta *load_elf(void *page_tables, struct ARC_File *file) {
 	return elf_load64(page_tables, file);
 }
 
-ARC_REGISTER_LOADER(ARC_LDRGRP_SOLO, elf64) = {
+ARC_REGISTER_LOADER(ARC_LDRGRP_64BIT, elf) = {
         .init = NULL,
         .uninit = NULL,
         .load = NULL,
