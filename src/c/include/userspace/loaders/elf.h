@@ -4,12 +4,12 @@
  * @author awewsomegamer <awewsomegamer@gmail.com>
  *
  * @LICENSE
- * Arctan-OS/Kernel - Operating System Kernel
- * Copyright (C) 2023-2025 awewsomegamer
+ * Arctan-OS/Kuserspace - Kernel-Userspace Junction
+ * Copyright (C) 2023-2026 awewsomegamer
  *
- * This file is part of Arctan-OS/Kernel.
+ * This file is part of Arctan-OS/Kuserspace
  *
- * Arctan is free software; you can redistribute it and/or
+ * Arctan-OS/Kuserspace is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; version 2
  *
@@ -70,7 +70,9 @@
 #define PT_INTERP 	3
 #define PT_NOTE 	4 
 #define PT_SHLIB 	5
-#define PT_PHDR 	6 
+#define PT_PHDR 	6
+#define PT_TLS          7
+#define PT_GNU_STACK    0x6474e551 // TODO: Not sure about this
 #define PT_LOOS 	0x60000000 
 #define PT_HIOS 	0x6FFFFFFF
 #define PT_LOPROC 	0x70000000 
@@ -151,10 +153,12 @@ struct Elf64_Phdr {
 }__attribute__((packed));
 
 struct ARC_ELFMeta {
-	void *entry;
-	void *phdr;
-	size_t phent;
-	size_t phnum;
+        struct Elf64_Ehdr *header;
+        struct {
+                struct Elf64_Phdr *headers;
+                uint32_t count;
+                uint32_t size;
+        } phdrs;
 };
 
 #endif

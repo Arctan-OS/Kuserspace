@@ -4,12 +4,12 @@
  * @author awewsomegamer <awewsomegamer@gmail.com>
  *
  * @LICENSE
- * Arctan-OS/Kernel - Operating System Kernel
- * Copyright (C) 2023-2025 awewsomegamer
+ * Arctan-OS/Kuserspace - Kernel-Userspace Junction
+ * Copyright (C) 2023-2026 awewsomegamer
  *
- * This file is part of Arctan-OS/Kernel.
+ * This file is part of Arctan-OS/Kuserspace
  *
- * Arctan is free software; you can redistribute it and/or
+ * Arctan-OS/Kuserspace is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; version 2
  *
@@ -47,6 +47,7 @@ typedef struct ARC_ProgramMeta {
         size_t size;
         void *loader_data;
         const struct ARC_ProgramLoaderDef *loader;
+        void *page_table;
 } ARC_ProgramMeta;
         
 typedef struct ARC_ProgramLoaderDef {
@@ -59,6 +60,6 @@ typedef struct ARC_ProgramLoaderDef {
 int program_loader_load(ARC_ProgramMeta *, void *, size_t);
 int program_loader_unload(ARC_ProgramMeta *, void *, size_t);
 int uninit_program_loader(ARC_ProgramMeta *);
-ARC_ProgramMeta *init_program_loader(int group, int index, ARC_File *);
+ARC_ProgramMeta *init_program_loader(int group, int index, ARC_File *, void *page_table);
 
 #endif

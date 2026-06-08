@@ -4,12 +4,12 @@
  * @author awewsomegamer <awewsomegamer@gmail.com>
  *
  * @LICENSE
- * Arctan-OS/Kernel - Operating System Kernel
- * Copyright (C) 2023-2025 awewsomegamer
+ * Arctan-OS/Kuserspace - Kernel-Userspace Junction
+ * Copyright (C) 2023-2026 awewsomegamer
  *
- * This file is part of Arctan-OS/Kernel.
+ * This file is part of Arctan-OS/Kuserspace
  *
- * Arctan is free software; you can redistribute it and/or
+ * Arctan-OS/Kuserspace is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; version 2
  *
@@ -135,10 +135,18 @@ struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 		return NULL;
 	}
 
-        ARC_ProgramMeta *meta = init_program_loader(ARC_LDRGRP_64BIT, ARC_LOADER_64BIT_ELF, file);
+        void *page_table = userspace ? process->page_tables.user : process->page_tables.kernel;
+        ARC_ProgramMeta *meta = init_program_loader(ARC_LDRGRP_64BIT, ARC_LOADER_64BIT_ELF,
+                                                    file, page_table);
 
         if (meta == NULL) {
                 ARC_DEBUG(ERR, "Failed to initialize program loader\n");
+                return NULL;
+        }
+
+        if (program_loader_load(meta, NULL, 0) != 0) {
+                ARC_DEBUG(ERR, "Failed to load program\n");
+                uninit_program_loader(meta);
                 return NULL;
         }
 
@@ -151,8 +159,6 @@ struct ARC_Process *process_create_from_file(bool userspace, char *filepath) {
 
 	char *argv[] = {"hello", "world"};
 	conv_prepare_entry_stack(main, meta, NULL, 0, argv, 2);
-
-	free(meta);
 
 	ARC_DEBUG(INFO, "Created process from file %s\n", filepath);
 
